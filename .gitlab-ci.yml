@@ -1,0 +1,34 @@
+# Java 8 is required to run ETL jobs due to limitations of Apache Spark 2.4 and other tools
+#  like Spark Operator image or AWS Glue requirements.
+# If you don't have such kind of limitations in your project, fell free to use newer image.
+image: docker.inventale.com/platform/build/jdk/jdk8:1.1.3
+
+stages:
+  - verify
+
+before_script:
+  #  cache gradle for the branch
+  - export GRADLE_USER_HOME=`pwd`/.gradle
+
+cache:
+  key: etl-glue-one-key-to-rule-them-all
+  paths:
+    - .gradle/wrapper
+    - .gradle/caches
+
+# --------- Verify stage ---------
+tests:
+  stage: verify
+  script:
+    - ./gradlew clean test --build-cache --scan
+  except:
+    - schedules
+    - tags
+  artifacts:
+    expire_in: 2 weeks
+    when: always
+    name: "$CI_BUILD_ID"
+    paths:
+      - $CI_PROJECT_DIR/**/build/reports/*
+    reports:
+      junit: $CI_PROJECT_DIR/**/build/test-results/test/TEST-*.xml

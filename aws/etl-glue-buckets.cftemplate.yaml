@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Creating s3 buckets'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: 'Account specific parameters'
+Resources:
+  S3CodeBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Join ["-", ["etl-glue", !Sub "${AWS::Region}-${AWS::AccountId}","code"]]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  S3InputBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Join ["-", ["etl-glue", !Sub "${AWS::Region}-${AWS::AccountId}", "input"]]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  S3DBBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Join ["-", ["etl-glue", !Sub "${AWS::Region}-${AWS::AccountId}", "db"]]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+
+Outputs:
+  S3BucketCodeName:
+    Value: !Ref S3CodeBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-codeBucketName"
+  S3BucketCodeArn:
+    Value: !GetAtt S3CodeBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-codeBucketArn"
+  S3BucketInputName:
+    Value: !Ref S3InputBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-inputBucketName"
+  S3BucketInputArn:
+    Value: !GetAtt S3InputBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-inputBucketArn"
+  S3BucketDBName:
+    Value: !Ref S3DBBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-dbBucketName"
+  S3BucketDBArn:
+    Value: !GetAtt S3DBBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-dbBucketArn"

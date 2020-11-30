@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Creating ETL related resources for ETL Glue project'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: 'Account specific parameters'
+        Parameters:
+          - S3BucketsStackName
+          - JarS3Key
+Parameters:
+  s3BucketsStackName:
+    Description: "S3BucketsStackName"
+    Type: String
+    Default: etl-glue-buckets
+  JarS3Key:
+    Description: "JarS3Key"
+    Type: String
+    Default: /scala-libs/etl-glue.jar
+
+Resources:
+  etlGlueCommonEtlRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - Fn::ImportValue:
+                      !Sub "${s3BucketsStackName}-dbBucketArn"
+                  - Fn::Join:
+                      - ""
+                      - - Fn::ImportValue:
+                            !Sub "${s3BucketsStackName}-dbBucketArn"
+                        - "/*"
+                  - Fn::ImportValue:
+                      !Sub "${s3BucketsStackName}-codeBucketArn"
+                  - Fn::Join:
+                      - ""
+                      - - Fn::ImportValue:
+                            !Sub "${s3BucketsStackName}-codeBucketArn"
+                        - "/*"
+  etlGlueEvents2ParquetJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          Fn::Join:
+            - ""
+            - - "s3://"
+              - Fn::ImportValue:
+                  !Sub "${s3BucketsStackName}-codeBucketName"
+              - "/glue-script-location/GlueEtl.scala"
+
+      # See glue versions and supported Scala/Spark versions
+      # https://docs.aws.amazon.com/glue/latest/dg/release-notes.html
+      # https://docs.aws.amazon.com/glue/latest/dg/add-job.html
+      GlueVersion: "2.0"
+      DefaultArguments:
+        "--extra-jars":
+          Fn::Join:
+            - ""
+            - - "s3://"
+              - Fn::ImportValue:
+                  !Sub "${s3BucketsStackName}-codeBucketName"
+              - !Ref JarS3Key
+        "--job-language": "scala"
+        "--class": "com.inventale.platform.jobs.WeatherToParquetJob"
+        "--job-bookmark-option": "job-bookmark-enable"
+        '--enable-metrics': ''
+        "--TempDir":
+          Fn::Join:
+            - ""
+            - - "s3://"
+              - Fn::ImportValue:
+                  !Sub "${s3BucketsStackName}-dbBucketName"
+              - "/tmp-etl/"
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+      MaxRetries: 0
+      MaxCapacity: 3
+      Role: !Ref etlGlueCommonEtlRole
+
+  etlGlueEvents2ParquetTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Type: SCHEDULED
+      Description: DESCRIPTION_SCHEDULED
+      Schedule: cron(15 6 * * ? *)
+      StartOnCreation: false
+      Actions:
+        - JobName: !Ref etlGlueEvents2ParquetJob
+          Arguments:
+            '--job-bookmark-option': job-bookmark-enable
+            '--enable-metrics': ''
+
+  etlGlueDB:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Description:  DB for ETL Glue
+        Name: etlgluedb
+  inputCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Role: !Ref etlGlueCommonEtlRole
+      SchemaChangePolicy:
+        DeleteBehavior: DEPRECATE_IN_DATABASE
+        UpdateBehavior: UPDATE_IN_DATABASE
+      Schedule:
+        ScheduleExpression: cron(0 6 * * ? *)
+      DatabaseName: !Ref etlGlueDB
+      Targets:
+        S3Targets:
+          - Path:
+              Fn::Join:
+                - ""
+                - - Fn::ImportValue:
+                      !Sub "${s3BucketsStackName}-inputBucketName"
+                  - "/input"
+      TablePrefix: ""
+#      https://docs.aws.amazon.com/glue/latest/dg/crawler-configuration.html
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+  weatherCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Role: !Ref etlGlueCommonEtlRole
+      SchemaChangePolicy:
+        DeleteBehavior: DEPRECATE_IN_DATABASE
+        UpdateBehavior: UPDATE_IN_DATABASE
+      Schedule:
+        ScheduleExpression: cron(0 7 * * ? *)
+      DatabaseName: !Ref etlGlueDB
+      Targets:
+        S3Targets:
+          - Path:
+              Fn::Join:
+                - ""
+                - - Fn::ImportValue:
+                      !Sub "${s3BucketsStackName}-dbBucketName"
+                  - "/weather"
+      TablePrefix: ""
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
